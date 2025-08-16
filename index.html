@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Widget do tempo · Notion</title>
+  <style>
+    :root {
+      --card: #f5faf8;
+      --border: #cde5dd;
+      --text: #0f3b33;
+      --muted: #2a6b5d;
+    }
+    * { box-sizing: border-box; font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; }
+    html, body { margin: 0; padding: 0; background: transparent; color: var(--text); }
+    .wrap { padding: 20px; }
+    .widget { background: var(--card); border: 2px dashed var(--border); border-radius: 16px; padding: 20px 24px; max-width: 960px; margin: 0 auto; }
+    .top { display: grid; grid-template-columns: 1fr auto; gap: 16px; align-items: center; padding-bottom: 8px; }
+    .city h2 { margin: 0; font-size: 20px; letter-spacing: 0.6px; color: var(--muted); }
+    .city span { font-size: 12px; color: var(--muted); opacity: .9; letter-spacing: 1px; }
+    .current { text-align: right; }
+    .temp { font-size: 42px; font-weight: 700; line-height: 1; }
+    .cond { margin-top: 4px; font-size: 16px; color: var(--muted); text-transform: lowercase; }
+    .days { display: grid; grid-template-columns: repeat(7, 1fr); gap: 12px; margin-top: 10px; }
+    .day { text-align: center; padding: 8px 6px; border-radius: 12px; }
+    .day .name { font-weight: 600; margin-bottom: 6px; font-size: 14px; color: var(--muted); }
+    .icon { width: 36px; height: 36px; margin: 4px auto; display: block; }
+    .t { font-size: 14px; }
+    .t .hi { font-weight: 700; }
+    .t .lo { opacity: .85; }
+    .meta { margin-top: 8px; font-size: 12px; color: var(--muted); opacity: .9; }
+    @media (max-width: 720px) { .days { grid-template-columns: repeat(4, 1fr); } }
+    @media (max-width: 460px) { .top { grid-template-columns: 1fr; text-align: center; } .current { text-align: center; } .days { grid-template-columns: repeat(3, 1fr); } }
+    .w-clear { color: #f7b500; }
+    .w-cloud { color: #7aa6a0; }
+    .w-rain { color: #5a8a84; }
+    .w-thunder { color: #3a6f69; }
+    .w-snow { color: #7fb5b0; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="widget" id="widget">
+      <div class="top">
+        <div class="city">
+          <h2 id="city">CIDADE</h2>
+          <span id="subtitle">TEMPO</span>
+        </div>
+        <div class="current">
+          <div class="temp" id="temp">-- °C</div>
+          <div class="cond" id="cond">carregando…</div>
+        </div>
+      </div>
+      <div class="days" id="days"></div>
+      <div class="meta" id="meta"></div>
+    </div>
+  </div>
+
+  <script>
+    const qs = new URLSearchParams(location.search);
+    const CITY_NAME = (qs.get('city') || 'Manaus').trim();
+    const DAYS = Math.min(Math.max(parseInt(qs.get('days') || '7', 10) || 7, 3), 10);
+    const TIMEZONE = (qs.get('tz') || 'auto');
+
+    const WMO = {
+      0: { t:'céu limpo', icon:'clear' },
+      1: { t:'predomínio de sol', icon:'clear' },
+      2: { t:'parcialmente nublado', icon:'cloud' },
+      3: { t:'nublado', icon:'cloud' },
+      45:{ t:'névoa', icon:'cloud' }, 48:{ t:'névoa', icon:'cloud' },
+      51:{ t:'chuvisco', icon:'rain' }, 53:{ t:'chuvisco', icon:'rain' }, 55:{ t:'chuvisco', icon:'rain' },
+      61:{ t:'chuva fraca', icon:'rain' }, 63:{ t:'chuva', icon:'rain' }, 65:{ t:'chuva forte', icon:'rain' },
+      66:{ t:'chuva congelante', icon:'rain' }, 67:{ t:'chuva congelante', icon:'rain' },
+      71:{ t:'neve fraca', icon:'snow' }, 73:{ t:'neve', icon:'snow' }, 75:{ t:'neve forte', icon:'snow' },
+      77:{ t:'grãos de neve', icon:'snow' },
+      80:{ t:'pancadas de chuva', icon:'rain' }, 81:{ t:'pancadas de chuva', icon:'rain' }, 82:{ t:'pancadas de chuva fortes', icon:'rain' },
+      85:{ t:'pancadas de neve', icon:'snow' }, 86:{ t:'pancadas de neve', icon:'snow' },
+      95:{ t:'trovoada', icon:'thunder' }, 96:{ t:'trovoada', icon:'thunder' }, 99:{ t:'trovoada forte', icon:'thunder' }
+    };
+
+    function iconSvg(kind) {
+      switch(kind){
+        case 'clear':
+          return `<svg class="icon w-clear" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>`;
+        case 'cloud':
+          return `<svg class="icon w-cloud" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19a4.5 4.5 0 0 0 0-9 5.5 5.5 0 0 0-10.5 2"/><path d="M5 19h12"/></svg>`;
+        case 'rain':
+          return `<svg class="icon w-rain" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 16a4.5 4.5 0 0 0 0-9 5.5 5.5 0 0 0-10.5 2"/><path d="M5 16h12"/><path d="M8 20l-1 2M12 20l-1 2M16 20l-1 2"/></svg>`;
+        case 'thunder':
+          return `<svg class="icon w-thunder" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 15a4.5 4.5 0 0 0 0-9 5.5 5.5 0 0 0-10.5 2"/><path d="M5 15h12"/><path d="M11 16l-3 6 6-5h-3l3-6"/></svg>`;
+        case 'snow':
+          return `<svg class="icon w-snow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M4 6l16 12M20 6L4 18"/><circle cx="12" cy="12" r="1"/></svg>`;
+        default:
+          return `<svg class="icon w-cloud" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19a4.5 4.5 0 0 0 0-9 5.5 5.5 0 0 0-10.5 2"/><path d="M5 19h12"/></svg>`;
+      }
+    }
+
+    const WEEKDAYS = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+
+    async function getCoords(city){
+      const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1&language=pt&format=json`;
+      const r = await fetch(url, { cache: 'no-store' });
+      const j = await r.json();
+      if (!j.results || !j.results.length) throw new Error('Cidade não encontrada');
+      const c = j.results[0];
+      return { lat: c.latitude, lon: c.longitude, name: `${c.name.toUpperCase()}` };
+    }
+
+    async function getForecast(lat, lon){
+      const params = new URLSearchParams({
+        latitude: lat,
+        longitude: lon,
+        current_weather: 'true',
+        daily: ['weathercode','temperature_2m_max','temperature_2m_min'].join(','),
+        timezone: TIMEZONE
+      });
+      const r = await fetch(`https://api.open-meteo.com/v1/forecast?${params.toString()}`, { cache: 'no-store' });
+      return r.json();
+    }
+
+    function render(data){
+      const cityEl = document.getElementById('city');
+      const tempEl = document.getElementById('temp');
+      const condEl = document.getElementById('cond');
+      const daysEl = document.getElementById('days');
+      const metaEl = document.getElementById('meta');
+
+      const { current_weather, daily } = data;
+      const meta = WMO[current_weather.weathercode] || { t:'', icon:'cloud' };
+      tempEl.textContent = `${Math.round(current_weather.temperature)} °C`;
+      condEl.textContent = (meta.t || '');
+
+      daysEl.innerHTML = '';
+      const dates = daily.time.map(t => new Date(t));
+      for (let i = 0; i < Math.min(DAYS, dates.length); i++){
+        const dayName = WEEKDAYS[dates[i].getDay()];
+        const w = WMO[daily.weathercode[i]] || { t:'', icon:'cloud' };
+        const hi = Math.round(daily.temperature_2m_max[i]);
+        const lo = Math.round(daily.temperature_2m_min[i]);
+        const card = document.createElement('div');
+        card.className = 'day';
+        card.innerHTML = `
+          <div class="name">${dayName}</div>
+          ${iconSvg(w.icon)}
+          <div class="t"><span class="hi">${hi} °C</span><br><span class="lo">${lo} °C</span></div>
+        `;
+        daysEl.appendChild(card);
+      }
+
+      const now = new Date();
+      const ts = now.toLocaleString('pt-BR', { hour12: false });
+      metaEl.textContent = `Atualizado: ${ts}`;
+    }
+
+    async function load(){
+      try {
+        document.getElementById('city').textContent = CITY_NAME.toUpperCase();
+        const { lat, lon, name } = await getCoords(CITY_NAME);
+        document.getElementById('city').textContent = name;
+        const data = await getForecast(lat, lon);
+        render(data);
+      } catch (e){
+        document.getElementById('cond').textContent = 'Não foi possível carregar o tempo';
+        console.error(e);
+      }
+    }
+
+    load();
+    setInterval(load, 30 * 60 * 1000);
+  </script>
+</body>
+</html>
